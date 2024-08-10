@@ -7,6 +7,8 @@ const { OpenAI } = require("openai");
 const { exec } = require('child_process');
 
 const app = express();
+app.use(express.json());
+
 const upload = multer({ dest: "uploads/" });
 
 const authorizedEmails = process.env.EMAILS_AUTHORIZED.split(',');
@@ -16,7 +18,13 @@ const openai = new OpenAI({
 });
 
 function emailAuthMiddleware(req, res, next) {
-  const { email } = req.body;
+  let email;
+
+  if (req.is("application/json")) {
+    email = req.body.email;
+  } else if (req.is("multipart/form-data")) {
+    email = req.body.email;
+  }
 
   if (!email) {
     return res.status(401).send({ message: "Unauthorized: Email is required." });
