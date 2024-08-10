@@ -17,18 +17,15 @@ const openai = new OpenAI({
 });
 
 async function transcribeAudio(filePath) {
-  console.log("filePath ==>", filePath);
+  const mp3FilePath = `${filePath}.mp3`;
 
-  const mp3FilePath = filePath.replace('.m4a', '.mp3');
   try {
     await new Promise((resolve, reject) => {
-      exec(`ffmpeg -i ${filePath} -codec:a libmp3lame -qscale:a 2 ${mp3FilePath}`, (error, stdout, stderr) => {
+      exec(`ffmpeg -i ${filePath} -codec:a libmp3lame -b:a 192k ${mp3FilePath}`, (error, stdout, stderr) => {
         if (error) {
           console.error('Error during conversion:', error);
           reject(error);
         }
-        console.log('Conversion stdout:', stdout);
-        console.error('Conversion stderr:', stderr);
         resolve();
       });
     });
@@ -42,8 +39,6 @@ async function transcribeAudio(filePath) {
       file: fs.createReadStream(mp3FilePath),
       model: "whisper-1",
     });
-
-    console.log("Transcription text:", transcription.text);
 
     return transcription.text;
   } catch (error) {
@@ -90,7 +85,6 @@ async function describeImage(imagePath) {
     });
   
     const description = responseText.choices[0].text.trim();
-    console.log("Description ===>:", description);
     return description;
 
   } catch (error) {
@@ -116,16 +110,14 @@ app.post("/describe", upload.single("image"), async (req, res) => {
 });
 
 app.post("/analyze-audio", upload.single("audio"), async (req, res) => {
-  console.log("make post request ==>", req.file);
+
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No audio file uploaded." });
     }
-    console.log("make try post request ==>", req.file);
     const audioPath = path.resolve(req.file.path);
-    console.log("audioPath ==>", audioPath);
     const transcribedText = await transcribeAudio(audioPath);
-    console.log("transcribedText ==>", transcribedText);
+
     res.json({ transcribedText });
   } catch (error) {
     res.status(500).json({ error: error.message });
