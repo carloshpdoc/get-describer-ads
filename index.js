@@ -2,19 +2,32 @@ require("dotenv").config();
 const fs = require('fs');
 const express = require("express");
 const multer = require("multer");
-const tesseract = require("tesseract.js");
 const path = require("path");
 const { OpenAI } = require("openai");
-const speech = require('@google-cloud/speech');
-const vision = require('@google-cloud/vision');
 const { exec } = require('child_process');
 
 const app = express();
 const upload = multer({ dest: "uploads/" });
 
+const authorizedEmails = process.env.EMAILS_AUTHORIZED.split(',');
+
 const openai = new OpenAI({
     apiKey: process.env['OPENAI_API_KEY'],
 });
+
+function emailAuthMiddleware(req, res, next) {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(401).send({ message: "Unauthorized: Email is required." });
+  }
+
+  if (!authorizedEmails.includes(email)) {
+    return res.status(401).send({ message: "Unauthorized: Email is not authorized." });
+  }
+
+  next();
+}
 
 async function transcribeAudio(filePath) {
   const mp3FilePath = `${filePath}.mp3`;
@@ -23,9 +36,11 @@ async function transcribeAudio(filePath) {
     await new Promise((resolve, reject) => {
       exec(`ffmpeg -i ${filePath} -codec:a libmp3lame -b:a 192k ${mp3FilePath}`, (error, stdout, stderr) => {
         if (error) {
-          console.error('Error during conversion:', error);
+          console.error('=== Error === during conversion:', error);
           reject(error);
         }
+        console.log('=== stdout ===',stdout);
+        console.log('=== stderr ===',stderr);
         resolve();
       });
     });
@@ -40,7 +55,8 @@ async function transcribeAudio(filePath) {
       model: "whisper-1",
     });
 
-    return transcription.text;
+    console.log('transcription ===>',transcription);
+    return transcription;
   } catch (error) {
     console.error("Error during transcription:", error);
     throw new Error("Failed to transcribe audio.");
@@ -93,7 +109,7 @@ async function describeImage(imagePath) {
   }
 }
 
-app.post("/describe", upload.single("image"), async (req, res) => {
+app.post("/describe", upload.single("image"), emailAuthMiddleware, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No image file uploaded." });
@@ -109,18 +125,31 @@ app.post("/describe", upload.single("image"), async (req, res) => {
   }
 });
 
-app.post("/analyze-audio", upload.single("audio"), async (req, res) => {
-
+app.post("/analyze-audio", upload.single("audio"), emailAuthMiddleware, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: "No audio file uploaded." });
     }
+
     const audioPath = path.resolve(req.file.path);
+
     const transcribedText = await transcribeAudio(audioPath);
 
     res.json({ transcribedText });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/authenticate', (req, res) => {
+  const { email } = req.body;
+
+  if (authorizedEmails.includes(email)) {
+    console.log('Authorized', email);
+      res.status(200).send({ message: 'Authorized' });
+  } else {
+    console.log('Unauthorized', email);
+      res.status(401).send({ message: 'Unauthorized' });
   }
 });
 
